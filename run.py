@@ -5,12 +5,10 @@ import base64
 import os
 from curl_cffi.requests import AsyncSession
 
-# Import dai tuoi file
+# Import minimi
 from static.static import HTML
 from static.configure import CONFIGURE
 from Src.API.streamingcommunity import streaming_community
-from Src.API.cb01 import cb01
-from Src.API.guardaserie import guardaserie
 import Src.Utilities.config as config
 from Src.Utilities.loadenv import load_env
 
@@ -20,35 +18,29 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 MANIFEST = {
     "id": "org.stremio.mammamia.cappe77",
-    "version": "2.7.0",
+    "version": "2.8.0",
     "name": "MammaMia Finale",
     "description": "Server Personale di Cappe77",
     "logo": "https://creazilla-store.fra1.digitaloceanspaces.com/emojis/49647/pizza-emoji-clipart-md.png",
     "resources": ["stream"],
     "types": ["movie", "series"],
-    "id_prefixes": ["tt"],
-    "behaviorHints": {"configurable": True, "configurationRequired": False}
+    "id_prefixes": ["tt"]
 }
-
-def respond_with(data):
-    return JSONResponse(data, headers={'Access-Control-Allow-Origin': '*'})
 
 @app.get('/configure', response_class=HTMLResponse)
 def config_page(request: Request):
-    instance_url = f"{request.url.scheme}://{request.url.netloc}"
-    return CONFIGURE.replace("{instance_url}", instance_url)
+    return CONFIGURE.replace("{instance_url}", f"{request.url.scheme}://{request.url.netloc}")
 
 @app.get('/manifest.json')
 @app.get('/{config_str}/manifest.json')
 def addon_manifest(config_str: str = None):
-    return respond_with(MANIFEST)
+    return JSONResponse(MANIFEST)
 
 @app.get('/')
 def root():
@@ -56,48 +48,28 @@ def root():
 
 @app.get('/{config_str}/stream/{type}/{id}.json')
 async def addon_stream(config_str: str, type: str, id: str):
-    tmdb = os.environ.get('TMDB_KEY')
+    # Iniziamo con una lista vuota
+    streams = {'streams': []}
     
-    # Link informativo
-    streams = {'streams': [{
-        'title': f'✅ SERVER ATTIVO\nTMDB: OK | Ricerca flussi...',
-        'url': 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
-    }]}
+    # Questo link serve solo a farti capire che il server sta lavorando
+    streams['streams'].append({
+        'title': '🍕 RICERCA IN CORSO...\nAttendi qualche secondo',
+        'url': 'https://vjs.zencdn.net/v/oceans.mp4'
+    })
     
-    # User-Agent per ingannare i siti (far sembrare il server un browser umano)
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-
-    async with AsyncSession(headers=headers, timeout=20) as client:
+    async with AsyncSession(timeout=30) as client:
         if "tt" in id:
-            # 1. Prova StreamingCommunity (Fonte più veloce)
             try:
-                # Forza ricerca senza proxy per Hugging Face
+                # Proviamo SOLO StreamingCommunity che è il più stabile
                 streams = await streaming_community(streams, id, client, "0", ['', ''])
             except Exception as e:
-                print(f"Errore SC: {e}")
-
-            # 2. Prova CB01 (Se SC fallisce)
-            try:
-                streams = await cb01(streams, id, "0", ['', ''], client)
-            except Exception as e:
-                print(f"Errore CB: {e}")
-                
-            # 3. Prova Guardaserie
-            try:
-                streams = await guardaserie(streams, id, client)
-            except Exception as e:
-                print(f"Errore GS: {e}")
+                print(f"Errore ricerca: {e}")
     
-    # Se dopo la ricerca abbiamo solo il link di test, aggiungiamo un avviso
-    if len(streams['streams']) == 1:
-        streams['streams'].append({
-            'title': '⚠️ Nessun link trovato.\nProva un altro film o attendi.',
-            'url': ''
-        })
+    # Se ha trovato qualcosa, togliamo il messaggio di attesa
+    if len(streams['streams']) > 1:
+        streams['streams'].pop(0)
             
-    return respond_with(streams)
+    return JSONResponse(streams)
 
 if __name__ == '__main__':
     import uvicorn
