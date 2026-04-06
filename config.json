@@ -65,6 +65,12 @@
             "TI_PROXY": "0"
         }
     },
+    "Captcha": {
+        "Uprot": {
+            "UT_ForwardProxy": "0",
+            "UT_PROXY": "0"
+        }
+    },
     "Catalogues": {
         "enabled": "1"
     },
