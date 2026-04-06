@@ -72,42 +72,31 @@ User_Agent= "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gec
 static = Jinja2Templates(directory="static")
 
 MANIFEST = {
-    "id": "org.stremio.mammamia",
-    "version": "2.0.0",
+    "id": "org.stremio.mammamia.personale",
+    "version": "2.1.0",
+    "name": Name,
+    "description": "Addon MammaMia Personale per Streaming IT",
+    "logo": "https://creazilla-store.fra1.digitaloceanspaces.com/emojis/49647/pizza-emoji-clipart-md.png",
+    "resources": ["stream", "catalog", "meta"],
+    "types": ["movie", "series", "tv"],
+    "id_prefixes": ["tt", "tmdb", "kitsu", "tv", "realtime"], # FONDAMENTALE
     "catalogs": [
         {
             "type": "tv",
             "id": "tv_channels",
-            "name": "MammaMia",
-            "behaviorHints": {
-                "configurable": True,
-                "configurationRequired": True
-                },
-            "extra": [
-                {
-                    "name": "genre",
-                    "isRequired": False,
-                    "options": ["Rai", "Mediaset", "Sky", "Euronews", "La7", "Warner Bros", "FIT", "Sportitalia","RSI","DAZN", "Rakuten", "Pluto", "A+E", "Paramount", "Chill"]
-                }
-            ]
+            "name": "MammaMia TV"
         },
         {
-            'id': 'realtime',
-            'type': "series",
-            "name": "realtime",
-            'extra' :[
-                {
-                    "name": "search",
-                    "isRequired": True
-                }
-            ]
+            "id": "realtime",
+            "type": "series",
+            "name": "MammaMia Realtime",
+            "extra": [{"name": "search", "isRequired": True}]
         }
     ],
-    "resources": ["stream", "catalog", "meta"],
-    "types": ["movie", "series", "tv"],
-    "name": Name,
-    "description": "Addon providing HTTPS Streams for Italian Movies, Series, and Live TV! Note that you need to have Kitsu Addon installed in order to watch Anime",
-    "logo": "https://creazilla-store.fra1.digitaloceanspaces.com/emojis/49647/pizza-emoji-clipart-md.png"
+    "behaviorHints": {
+        "configurable": True,
+        "configurationRequired": False
+    }
 }
 
 
