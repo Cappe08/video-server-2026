@@ -1,14 +1,15 @@
-from fastapi import FastAPI, HTTPException, Request, Form
-from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 import base64
 from curl_cffi.requests import AsyncSession
 
-# Import minimi per stabilità
+# Import dai tuoi file
 from static.static import HTML
 from static.configure import CONFIGURE
 from Src.API.streamingcommunity import streaming_community
 from Src.API.cb01 import cb01
+from Src.API.guardaserie import guardaserie
 from Src.Utilities.dictionaries import STREAM, provider_map
 import Src.Utilities.config as config
 from Src.Utilities.loadenv import load_env
@@ -26,21 +27,18 @@ app.add_middleware(
 
 MANIFEST = {
     "id": "org.stremio.mammamia.cappe77",
-    "version": "2.2.0",
+    "version": "2.5.0",
     "name": "MammaMia Finale",
-    "description": "Streaming IT - Server Personale",
+    "description": "Server Personale di Cappe77",
     "logo": "https://creazilla-store.fra1.digitaloceanspaces.com/emojis/49647/pizza-emoji-clipart-md.png",
-    "resources": ["stream", "catalog"],
+    "resources": ["stream"],
     "types": ["movie", "series"],
     "id_prefixes": ["tt"],
-    "catalogs": [],
     "behaviorHints": {"configurable": True, "configurationRequired": False}
 }
 
 def respond_with(data):
-    resp = JSONResponse(data)
-    resp.headers['Access-Control-Allow-Origin'] = '*'
-    return resp
+    return JSONResponse(data, headers={'Access-Control-Allow-Origin': '*'})
 
 @app.get('/configure', response_class=HTMLResponse)
 @app.get('/{config_str}/configure', response_class=HTMLResponse)
@@ -59,20 +57,29 @@ def root():
 
 @app.get('/{config_str}/stream/{type}/{id}.json')
 async def addon_stream(config_str: str, type: str, id: str):
-    # Link di test per verificare che l'addon funzioni
+    # Link di test (per conferma che il server risponde)
     streams = {'streams': [{
-        'title': '🚀 MAMMA MIA ONLINE\nServer di Cappe77',
+        'title': '✅ SERVER DI CAPPE77 ATTIVO\nRicerca in corso...',
         'url': 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
     }]}
     
     async with AsyncSession() as client:
         if "tt" in id:
-            # Proviamo a cercare su StreamingCommunity
+            # Ricerca su StreamingCommunity
             try:
                 streams = await streaming_community(streams, id, client, "0", ['', ''])
-            except Exception as e:
-                print(f"Errore ricerca: {e}")
-    
+            except: pass
+            
+            # Ricerca su CB01
+            try:
+                streams = await cb01(streams, id, "0", ['', ''], client)
+            except: pass
+            
+            # Ricerca su Guardaserie
+            try:
+                streams = await guardaserie(streams, id, client)
+            except: pass
+            
     return respond_with(streams)
 
 if __name__ == '__main__':
