@@ -24,7 +24,7 @@ app.add_middleware(
 
 MANIFEST = {
     "id": "org.stremio.mammamia.cappe77",
-    "version": "2.8.0",
+    "version": "3.0.0",
     "name": "MammaMia Finale",
     "description": "Server Personale di Cappe77",
     "logo": "https://creazilla-store.fra1.digitaloceanspaces.com/emojis/49647/pizza-emoji-clipart-md.png",
@@ -48,26 +48,26 @@ def root():
 
 @app.get('/{config_str}/stream/{type}/{id}.json')
 async def addon_stream(config_str: str, type: str, id: str):
-    # Iniziamo con una lista vuota
     streams = {'streams': []}
     
-    # Questo link serve solo a farti capire che il server sta lavorando
-    streams['streams'].append({
-        'title': '🍕 RICERCA IN CORSO...\nAttendi qualche secondo',
-        'url': 'https://vjs.zencdn.net/v/oceans.mp4'
-    })
-    
+    # Proviamo a cercare
     async with AsyncSession(timeout=30) as client:
         if "tt" in id:
             try:
-                # Proviamo SOLO StreamingCommunity che è il più stabile
+                # Cerchiamo su StreamingCommunity
                 streams = await streaming_community(streams, id, client, "0", ['', ''])
             except Exception as e:
                 print(f"Errore ricerca: {e}")
     
-    # Se ha trovato qualcosa, togliamo il messaggio di attesa
-    if len(streams['streams']) > 1:
-        streams['streams'].pop(0)
+    # Se la ricerca è vuota, aggiungiamo un messaggio chiaro
+    if not streams['streams']:
+        streams['streams'].append({
+            'title': '❌ Nessun link trovato su StreamingCommunity',
+            'url': 'https://vjs.zencdn.net/v/oceans.mp4' # Video di errore
+        })
+    else:
+        # Se ha trovato link reali, assicuriamoci che siano in cima
+        print(f"Trovati {len(streams['streams'])} link!")
             
     return JSONResponse(streams)
 
