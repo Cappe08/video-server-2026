@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 import base64
+import os
 from curl_cffi.requests import AsyncSession
 
 # Import dai tuoi file
@@ -9,8 +10,6 @@ from static.static import HTML
 from static.configure import CONFIGURE
 from Src.API.streamingcommunity import streaming_community
 from Src.API.cb01 import cb01
-from Src.API.guardaserie import guardaserie
-from Src.Utilities.dictionaries import STREAM, provider_map
 import Src.Utilities.config as config
 from Src.Utilities.loadenv import load_env
 
@@ -27,7 +26,7 @@ app.add_middleware(
 
 MANIFEST = {
     "id": "org.stremio.mammamia.cappe77",
-    "version": "2.5.0",
+    "version": "2.6.0",
     "name": "MammaMia Finale",
     "description": "Server Personale di Cappe77",
     "logo": "https://creazilla-store.fra1.digitaloceanspaces.com/emojis/49647/pizza-emoji-clipart-md.png",
@@ -41,8 +40,7 @@ def respond_with(data):
     return JSONResponse(data, headers={'Access-Control-Allow-Origin': '*'})
 
 @app.get('/configure', response_class=HTMLResponse)
-@app.get('/{config_str}/configure', response_class=HTMLResponse)
-def config_page(request: Request, config_str: str = None):
+def config_page(request: Request):
     instance_url = f"{request.url.scheme}://{request.url.netloc}"
     return CONFIGURE.replace("{instance_url}", instance_url)
 
@@ -57,29 +55,35 @@ def root():
 
 @app.get('/{config_str}/stream/{type}/{id}.json')
 async def addon_stream(config_str: str, type: str, id: str):
-    # Link di test (per conferma che il server risponde)
+    # Controllo chiave TMDB nei log
+    tmdb = os.environ.get('TMDB_KEY')
+    if not tmdb:
+        print("⚠️ ERRORE: Chiave TMDB_KEY non trovata nei Secrets!")
+    else:
+        print(f"✅ TMDB_KEY caricata correttamente: {tmdb[:5]}***")
+
     streams = {'streams': [{
-        'title': '✅ SERVER DI CAPPE77 ATTIVO\nRicerca in corso...',
+        'title': f'✅ SERVER ATTIVO\nTMDB: {"OK" if tmdb else "MANCANTE"}',
         'url': 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
     }]}
     
     async with AsyncSession() as client:
         if "tt" in id:
-            # Ricerca su StreamingCommunity
+            print(f"🔍 Ricerca film ID: {id}...")
             try:
+                # Prova StreamingCommunity
                 streams = await streaming_community(streams, id, client, "0", ['', ''])
-            except: pass
+                print(f"📊 Risultati correnti: {len(streams['streams'])} link")
+            except Exception as e:
+                print(f"❌ Errore ricerca SC: {e}")
             
-            # Ricerca su CB01
             try:
+                # Prova CB01
                 streams = await cb01(streams, id, "0", ['', ''], client)
-            except: pass
-            
-            # Ricerca su Guardaserie
-            try:
-                streams = await guardaserie(streams, id, client)
-            except: pass
-            
+                print(f"📊 Risultati totali: {len(streams['streams'])} link")
+            except Exception as e:
+                print(f"❌ Errore ricerca CB: {e}")
+    
     return respond_with(streams)
 
 if __name__ == '__main__':
