@@ -240,53 +240,101 @@ async def addon_meta(request: Request,id: str):
     return respond_with(meta)
 @app.get('/{config:path}/stream/{type}/{id}.json')
 @limiter.limit("5/second")
-async def addon_stream(request: Request,config, type, id,):
+@app.get('/{config:path}/stream/{type}/{id}.json')
+@limiter.limit("5/second")
+async def addon_stream(request: Request, config: str, type: str, id: str):
     if type not in MANIFEST['types']:
         raise HTTPException(status_code=404)
+    
     streams = {'streams': []}
-    config = base64.b64decode(config).decode('utf-8')
-    if "|" in config:
-        config_providers = config.split('|')
-    elif "%7C" in config:
-        config_providers = config.split('%7C')
+    
+    # Decodifica sicura della configurazione
+    try:
+        # Pulizia dei caratteri speciali e decodifica base64
+        config_clean = config.replace("%7C", "|").replace(" ", "")
+        config_decoded = base64.b64decode(config_clean).decode('utf-8')
+    except Exception:
+        # Se la decodifica fallisce, usiamo una config di default
+        config_decoded = "|SC|CB|GS|GHD|ES|GF|GO|RT|TI|"
+
+    # Estrazione dei provider selezionati
+    config_providers = config_decoded.split('|')
     provider_maps = {name: "0" for name in provider_map.values()}
     for provider in config_providers:
-            if provider in provider_map:
-                provider_name = provider_map[provider]
-                provider_maps[provider_name] = "1"
-    if "MFP[" in config:
-    # Extract proxy data between "MFP(" and ")"
-        mfp_data = config.split("MFP[")[1].split(")")[0]  
-    # Split the data by comma to get proxy URL and password
-        MFP_url, MFP_password = mfp_data.split(",")
-        MFP_password = MFP_password[:-2]
-        #If mfp_url ends with a string we remove it
-        if MFP_url.endswith('/'):
-            MFP_url = MFP_url[:-1]
-    # Store them in a list
-        MFP_CREDENTIALS = [MFP_url, MFP_password]
-        if MFP_url and MFP_password:
+        if provider in provider_map:
+            provider_name = provider_map[provider]
+            provider_maps[provider_name] = "1"
+
+    # Gestione Proxy MFP
+    MFP = "0"
+    MFP_CREDENTIALS = ['', '']
+    if "MFP[" in config_decoded:
+        try:
+            mfp_data = config_decoded.split("MFP[")[1].split("]")[0]
+            MFP_url, MFP_password = mfp_data.split(",")
+            if MFP_url.endswith('/'):
+                MFP_url = MFP_url[:-1]
+            MFP_CREDENTIALS = [MFP_url, MFP_password]
             MFP = "1"
-            
-    else:
-        MFP = "0"
-        MFP_CREDENTIALS = ['','']
-    async with AsyncSession(proxies = proxies) as client:
+        except Exception:
+            pass
+
+    async with AsyncSession(proxies=proxies) as client:
+        # CANALI TV
         if type == "tv":
             for channel in STREAM["channels"]:
                 if channel["id"] == id:
                     i = 0
                     if 'url' in channel:
-                        i = i+1
-                        streams['streams'].append({'title': f"{Icon}Server {i} " + f" "+ channel['name'] + " " + channel['title'] ,'url': channel['url']})     
+                        i += 1
+                        streams['streams'].append({'title': f"{Icon} Server {i} - {channel['name']}", 'url': channel['url']})
                     if id in extra_sources:
-                        list_sources = extra_sources[id]
-                        for item in list_sources:
-                            i = i+1
-                            streams['streams'].append({'title':f"{Icon}Server {i} " + channel['title'],'url': item})
-            if not streams['streams']:
-                raise HTTPException(status_code=404)
+                        for item in extra_sources[id]:
+                            i += 1
+                            streams['streams'].append({'title': f"{Icon} Server {i} - Extra", 'url': item})
             return respond_with(streams)
+
+        # REALTIME
+        elif "realtime" in id and RT == '1':
+            streams = await streams_realtime(streams, id, client)
+            return respond_with(streams)
+
+        # FILM E SERIE (tt, tmdb, kitsu)
+        elif "tt" in id or "tmdb" in id or "kitsu" in id:
+            logger.info(f"Ricerca flussi per: {id}")
+            
+            if "kitsu" in id:
+                if provider_maps.get('ANIMEWORLD') == "1" and AW == "1":
+                    streams = await animeworld(streams, id, client)
+            else:
+                # StreamingCommunity
+                if provider_maps.get('STREAMINGCOMMUNITY') == "1" and SC == "1":
+                    SC_MFP = "1" if provider_maps.get('SC_MFP') != "0" else "0"
+                    streams = await streaming_community(streams, id, client, SC_MFP, MFP_CREDENTIALS)
+                
+                # CB01
+                if provider_maps.get('CB01') == "1" and CB == "1":
+                    streams = await cb01(streams, id, MFP, MFP_CREDENTIALS, client)
+                
+                # Altri siti
+                if provider_maps.get('GUARDASERIE') == "1" and GS == "1":
+                    streams = await guardaserie(streams, id, client)
+                if provider_maps.get('GUARDAHD') == "1" and GHD == "1":
+                    streams = await guardahd(streams, id, client)
+                if provider_maps.get('EUROSTREAMING') == "1" and ES == "1":
+                    streams = await eurostreaming(streams, id, client, MFP, MFP_CREDENTIALS)
+                if provider_maps.get('GUARDAFLIX') == "1" and GF == "1":
+                    streams = await guardaflix(streams, id, client, MFP, MFP_CREDENTIALS)
+                if provider_maps.get('GUARDOSERIE') == "1" and GO == "1":
+                    streams = await guardoserie(streams, id, client, MFP, MFP_CREDENTIALS)
+                if provider_maps.get('TOONITALIA') == "1" and TI == "1":
+                    streams = await toonitalia(streams, id, client, MFP, MFP_CREDENTIALS)
+            
+            return respond_with(streams)
+
+    if not streams['streams']:
+        raise HTTPException(status_code=404)
+    return respond_with(streams)
         elif "realtime" in id and RT == '1':
             streams = await streams_realtime(streams,id,client)
             return respond_with(streams)
