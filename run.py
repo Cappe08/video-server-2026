@@ -1,21 +1,19 @@
-from fastapi import FastAPI, HTTPException,Request, Form,Cookie
-from fastapi.responses import JSONResponse,RedirectResponse,HTMLResponse
+from fastapi import FastAPI, HTTPException, Request, Form, Cookie
+from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.middleware import SlowAPIMiddleware
-from static.static import HTML
-from static.configure import  CONFIGURE
 from fastapi.templating import Jinja2Templates
-from  Src.API.streamingcommunity import streaming_community
+import logging
+import base64
+from urllib.parse import unquote
+from curl_cffi.requests import AsyncSession
+
+# Import locali
+from static.static import HTML
+from static.configure import CONFIGURE
+from Src.API.streamingcommunity import streaming_community
 from Src.API.cb01 import cb01
 from Src.API.guardaserie import guardaserie
 from Src.API.guardahd import guardahd
@@ -27,35 +25,46 @@ from Src.API.toonitalia import toonitalia
 from Src.API.realtime import search_catalog as realtime
 from Src.API.realtime import meta_catalog as meta_catalog_realtime
 from Src.API.realtime import realtime as streams_realtime
-from Src.Utilities.dictionaries import STREAM,extra_sources,provider_map
+from Src.Utilities.dictionaries import STREAM, extra_sources, provider_map
 from Src.Utilities.update_config import update_all_sites
-from Src.API.epg import tivu, tivu_get,epg_guide,convert_bho_1,convert_bho_2,convert_bho_3
-from Src.API.extractors.uprot import get_uprot_numbers,generate_uprot_txt
-import logging
-from urllib.parse import unquote
-from curl_cffi.requests import AsyncSession
-import base64
-import  Src.Utilities.config as config
+from Src.API.epg import tivu, tivu_get, epg_guide, convert_bho_1, convert_bho_2, convert_bho_3
+from Src.API.extractors.uprot import get_uprot_numbers, generate_uprot_txt
+import Src.Utilities.config as config
 from Src.Utilities.config import setup_logging
+from Src.Utilities.loadenv import load_env
+
+# Inizializzazione Config e Logging
 level = config.LEVEL
 logger = setup_logging(level)
-from Src.Utilities.loadenv import load_env
 env_vars = load_env()
 
-#Configure Env Vars
+# Inizializzazione App e CORS
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+
+static = Jinja2Templates(directory="static")
+
+# Configurazione Proxy
 Global_Proxy = config.Global_Proxy
 if Global_Proxy == "1":
     PROXY_CREDENTIALS = env_vars.get('PROXY_CREDENTIALS')
-        
-    proxies = {
-    "http": PROXY_CREDENTIALS,
-    "https": PROXY_CREDENTIALS
-}
+    proxies = {"http": PROXY_CREDENTIALS, "https": PROXY_CREDENTIALS}
 else:
     proxies = {}
-# Configure config
+
+# Variabili Globali
 SC = config.SC
-SC_DOMAIN = config.SC_DOMAIN
 AW = config.AW
 CB = config.CB
 GS = config.GS
@@ -66,48 +75,25 @@ GO = config.GO
 RT = config.RT
 TI = config.TI
 HOST = config.HOST
-PORT = int(config.PORT)
-if env_vars.get('PORT_ENV'):
-    PORT = int(env_vars.get('PORT_ENV'))
+PORT = int(env_vars.get('PORT_ENV')) if env_vars.get('PORT_ENV') else int(config.PORT)
 Icon = config.Icon
 Name = config.Name
-    #Cool code to set the hugging face if the service is hosted there.
-app = FastAPI()
-limiter = Limiter(key_func=get_remote_address)
-app.state.limiter = limiter
-app.add_middleware(SlowAPIMiddleware)
-User_Agent= "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
-#Tells Where to look for static files
-static = Jinja2Templates(directory="static")
 
 MANIFEST = {
     "id": "org.stremio.mammamia.personale",
     "version": "2.1.0",
     "name": Name,
-    "description": "Addon MammaMia Personale per Streaming IT",
+    "description": "Addon MammaMia Personale - Streaming IT",
     "logo": "https://creazilla-store.fra1.digitaloceanspaces.com/emojis/49647/pizza-emoji-clipart-md.png",
     "resources": ["stream", "catalog", "meta"],
     "types": ["movie", "series", "tv"],
-    "id_prefixes": ["tt", "tmdb", "kitsu", "tv", "realtime"], # FONDAMENTALE
+    "id_prefixes": ["tt", "tmdb", "kitsu", "tv", "realtime"],
     "catalogs": [
-        {
-            "type": "tv",
-            "id": "tv_channels",
-            "name": "MammaMia TV"
-        },
-        {
-            "id": "realtime",
-            "type": "series",
-            "name": "MammaMia Realtime",
-            "extra": [{"name": "search", "isRequired": True}]
-        }
+        {"type": "tv", "id": "tv_channels", "name": "MammaMia TV"},
+        {"id": "realtime", "type": "series", "name": "MammaMia Realtime", "extra": [{"name": "search", "isRequired": True}]}
     ],
-    "behaviorHints": {
-        "configurable": True,
-        "configurationRequired": False
-    }
+    "behaviorHints": {"configurable": True, "configurationRequired": False}
 }
-
 
 def respond_with(data):
     resp = JSONResponse(data)
@@ -115,37 +101,35 @@ def respond_with(data):
     resp.headers['Access-Control-Allow-Headers'] = '*'
     return resp
 
-
-
-@app.get('/configure',response_class=HTMLResponse)
-def config(request: Request):
+@app.get('/configure', response_class=HTMLResponse)
+def config_page(request: Request):
     forwarded_proto = request.headers.get("x-forwarded-proto")
     scheme = forwarded_proto if forwarded_proto else request.url.scheme
     instance_url = f"{scheme}://{request.url.netloc}"
-    html_content = CONFIGURE.replace("{instance_url}", instance_url)
-    return html_content
+    return CONFIGURE.replace("{instance_url}", instance_url)
+
 @app.get('/{config:path}/manifest.json')
 def addon_manifest(config: str): 
     manifest_copy = MANIFEST.copy() 
-    config = base64.b64decode(config).decode('utf-8')
-    if "LIVETV" not in config:
+    try:
+        decoded_config = base64.b64decode(config).decode('utf-8')
+    except:
+        decoded_config = ""
+    
+    if "LIVETV" not in decoded_config:
+        manifest_copy['catalogs'] = [c for c in manifest_copy['catalogs'] if c['id'] != 'tv_channels']
+    
+    if 'RT' not in decoded_config or RT == '0':
+        manifest_copy['catalogs'] = [c for c in manifest_copy['catalogs'] if c['id'] != 'realtime']
+        
+    if not manifest_copy['catalogs']:
         if "catalog" in manifest_copy["resources"]:
-            for item in manifest_copy['catalogs']:
-                if item['id'] == 'tv_channels':
-                    manifest_copy['catalogs'].remove(item)
-            if not any(manifest_copy['catalogs']):
-                manifest_copy["resources"].remove('catalog')
-    if 'RT' not in config or RT == '0':
-        if "catalog" in manifest_copy["resources"]:
-            for item in manifest_copy['catalogs']:
-                if item['id'] == 'realtime':
-                    manifest_copy['catalogs'].remove(item)
-            if not any(manifest_copy['catalogs']):
-                manifest_copy["resources"].remove('catalog')
+            manifest_copy["resources"].remove('catalog')
+            
     return respond_with(manifest_copy)
 
 @app.get('/manifest.json')
-def manifest():
+def manifest_default():
     return RedirectResponse(url="/|SC|LC|/manifest.json")
 
 @app.get('/', response_class=HTMLResponse)
@@ -153,256 +137,130 @@ def root(request: Request):
     forwarded_proto = request.headers.get("x-forwarded-proto")
     scheme = forwarded_proto if forwarded_proto else request.url.scheme
     instance_url = f"{scheme}://{request.url.netloc}"
-    html_content = HTML.replace("{instance_url}", instance_url)
-    return html_content
+    return HTML.replace("{instance_url}", instance_url)
+
 async def addon_catalog(type: str, id: str, genre: str = None):
-    if type != "tv":
-        raise HTTPException(status_code=404)
-    
+    if type != "tv": raise HTTPException(status_code=404)
     catalogs = {"metas": []}
-    
     for channel in STREAM["channels"]:
-        if genre and genre not in channel.get("genres", []):
-            continue  # Skip channels that don't match the selected genre
-        
-        description = f'Watch {channel["title"]}'
+        if genre and genre not in channel.get("genres", []): continue 
         catalogs["metas"].append({
-            "id": channel["id"],
-            "type": "tv",
-            "name": channel["title"],
-            "poster": channel["poster"],  # Add poster URL if available
-            "description": description,
+            "id": channel["id"], "type": "tv", "name": channel["title"],
+            "poster": channel["poster"], "description": f'Watch {channel["title"]}',
             "genres": channel.get("genres", [])
         })
-
     return catalogs
+
 @app.get('/{config:path}/catalog/{type}/{id}.json')
 @limiter.limit("5/second")
-async def first_catalog(request: Request,type: str, id: str, genre: str = None):
-    catalogs = await addon_catalog(type, id,genre)
-    return respond_with(catalogs)
-
-@app.get('/{config:path}/catalog/{type}/{id}/genre={genre}.json')
-async def first_catalog(type: str, id: str, genre: str = None):
-    catalogs = await addon_catalog(type, id,genre)
-    return respond_with(catalogs)
+async def first_catalog(request: Request, type: str, id: str, genre: str = None):
+    return respond_with(await addon_catalog(type, id, genre))
 
 @app.get('/{config:path}/catalog/{type}/{id}/search={query}.json')
-async def realtime_catalog(type:str,id:str,query: str = None):
-    if type != 'series':
-        raise HTTPException(status_code=404)
-    catalogs = {"query": query,'cacheMaxAge': 86400,"metas": []}
-    async with AsyncSession(proxies = proxies) as client:
-        catalogs = await realtime(query, catalogs,client)
+async def realtime_catalog(type: str, id: str, query: str = None):
+    if type != 'series': raise HTTPException(status_code=404)
+    catalogs = {"query": query, 'cacheMaxAge': 86400, "metas": []}
+    async with AsyncSession(proxies=proxies) as client:
+        catalogs = await realtime(query, catalogs, client)
     return respond_with(catalogs)
-@app.get('/{config:path}/meta/tv/{id}.json')
-@limiter.limit("20/second")
-async def addon_meta(request: Request,id: str):
-    # Find the channel by ID
-    channel = next((ch for ch in STREAM['channels'] if ch['id'] == id), None)
-    
-    if not channel:
-        raise HTTPException(status_code=404, detail="Channel not found")
-    async with AsyncSession(proxies = proxies) as client:
-        if channel["id"] in convert_bho_1 or channel["id"] in convert_bho_2 or channel["id"] in convert_bho_3:
-            description,title =  await epg_guide(channel["id"],client)
-        elif channel["id"] in tivu:
-            description = await tivu_get(channel["id"],client)
-            title = ""
-        else:
-            description = f'Watch {channel["title"]}'
-            title = ""
-    meta = {
-        'meta': {
-            'id': channel['id'],
-            'type': 'tv',
-            'name': channel['name'],
-            'poster': channel['poster'],
-            'posterShape': 'landscape',
-            'description': title + "\n" + description,
-            # Additional fields can be added here
-            'background': channel['poster'],  # Example of using the same poster as background
-            'logo': channel['poster'],
-            'genres': channel.get('genres', []),  # Example of using the same poster as logo
-        }
-    }
-    if 'url' in channel:
-        meta['meta']['url'] = channel['url']  # Using the stream URL as a website link
-    return respond_with(meta)
 
-@app.get('/{config:path}/meta/series/{id}.json')
-async def addon_meta(request: Request,id: str):
-    meta = {'meta': {'videos':[], 'status': 'Continuing', 'type': 'series', 'id': id}}
-    async with AsyncSession(proxies = proxies) as client:
-        if 'realtime' not in id:
-            raise HTTPException(status_code=404)
-        meta = await meta_catalog_realtime(id,meta,client)
-    return respond_with(meta)
-@app.get('/{config:path}/stream/{type}/{id}.json')
-@limiter.limit("5/second")
+@app.get('/{config:path}/meta/{type}/{id}.json')
+async def addon_meta(type: str, id: str):
+    if type == "tv":
+        channel = next((ch for ch in STREAM['channels'] if ch['id'] == id), None)
+        if not channel: raise HTTPException(status_code=404)
+        async with AsyncSession(proxies=proxies) as client:
+            if id in convert_bho_1 or id in convert_bho_2 or id in convert_bho_3:
+                description, title = await epg_guide(id, client)
+            elif id in tivu:
+                description = await tivu_get(id, client)
+                title = ""
+            else:
+                description, title = f'Watch {channel["title"]}', ""
+        return respond_with({'meta': {
+            'id': id, 'type': 'tv', 'name': channel['name'], 'poster': channel['poster'],
+            'posterShape': 'landscape', 'description': title + "\n" + description,
+            'background': channel['poster'], 'logo': channel['poster'], 'genres': channel.get('genres', [])
+        }})
+    elif type == "series" and 'realtime' in id:
+        meta = {'meta': {'videos': [], 'status': 'Continuing', 'type': 'series', 'id': id}}
+        async with AsyncSession(proxies=proxies) as client:
+            meta = await meta_catalog_realtime(id, meta, client)
+        return respond_with(meta)
+    raise HTTPException(status_code=404)
+
 @app.get('/{config:path}/stream/{type}/{id}.json')
 @limiter.limit("5/second")
 async def addon_stream(request: Request, config: str, type: str, id: str):
-    if type not in MANIFEST['types']:
-        raise HTTPException(status_code=404)
-    
+    if type not in MANIFEST['types']: raise HTTPException(status_code=404)
     streams = {'streams': []}
-    
-    # Decodifica sicura della configurazione
     try:
-        # Pulizia dei caratteri speciali e decodifica base64
         config_clean = config.replace("%7C", "|").replace(" ", "")
-        config_decoded = base64.b64decode(config_clean).decode('utf-8')
-    except Exception:
-        # Se la decodifica fallisce, usiamo una config di default
-        config_decoded = "|SC|CB|GS|GHD|ES|GF|GO|RT|TI|"
+        decoded_config = base64.b64decode(config_clean).decode('utf-8')
+    except:
+        decoded_config = "|SC|CB|GS|GHD|ES|GF|GO|RT|TI|"
 
-    # Estrazione dei provider selezionati
-    config_providers = config_decoded.split('|')
+    config_providers = decoded_config.split('|')
     provider_maps = {name: "0" for name in provider_map.values()}
-    for provider in config_providers:
-        if provider in provider_map:
-            provider_name = provider_map[provider]
-            provider_maps[provider_name] = "1"
+    for p in config_providers:
+        if p in provider_map: provider_maps[provider_map[p]] = "1"
 
-    # Gestione Proxy MFP
-    MFP = "0"
-    MFP_CREDENTIALS = ['', '']
-    if "MFP[" in config_decoded:
+    MFP, MFP_CREDENTIALS = "0", ['', '']
+    if "MFP[" in decoded_config:
         try:
-            mfp_data = config_decoded.split("MFP[")[1].split("]")[0]
-            MFP_url, MFP_password = mfp_data.split(",")
-            if MFP_url.endswith('/'):
-                MFP_url = MFP_url[:-1]
-            MFP_CREDENTIALS = [MFP_url, MFP_password]
+            mfp_data = decoded_config.split("MFP[")[1].split("]")[0]
+            u, p = mfp_data.split(",")
+            MFP_CREDENTIALS = [u[:-1] if u.endswith('/') else u, p]
             MFP = "1"
-        except Exception:
-            pass
+        except: pass
 
     async with AsyncSession(proxies=proxies) as client:
-        # CANALI TV
         if type == "tv":
             for channel in STREAM["channels"]:
                 if channel["id"] == id:
-                    i = 0
-                    if 'url' in channel:
-                        i += 1
-                        streams['streams'].append({'title': f"{Icon} Server {i} - {channel['name']}", 'url': channel['url']})
+                    if 'url' in channel: streams['streams'].append({'title': f"{Icon} Server 1 - {channel['name']}", 'url': channel['url']})
                     if id in extra_sources:
-                        for item in extra_sources[id]:
-                            i += 1
-                            streams['streams'].append({'title': f"{Icon} Server {i} - Extra", 'url': item})
-            return respond_with(streams)
-
-        # REALTIME
+                        for idx, item in enumerate(extra_sources[id], 2):
+                            streams['streams'].append({'title': f"{Icon} Server {idx}", 'url': item})
         elif "realtime" in id and RT == '1':
             streams = await streams_realtime(streams, id, client)
-            return respond_with(streams)
-
-        # FILM E SERIE (tt, tmdb, kitsu)
-        elif "tt" in id or "tmdb" in id or "kitsu" in id:
-            logger.info(f"Ricerca flussi per: {id}")
-            
-            if "kitsu" in id:
-                if provider_maps.get('ANIMEWORLD') == "1" and AW == "1":
-                    streams = await animeworld(streams, id, client)
+        elif any(x in id for x in ["tt", "tmdb", "kitsu"]):
+            if "kitsu" in id and provider_maps.get('ANIMEWORLD') == "1" and AW == "1":
+                streams = await animeworld(streams, id, client)
             else:
-                # StreamingCommunity
                 if provider_maps.get('STREAMINGCOMMUNITY') == "1" and SC == "1":
-                    SC_MFP = "1" if provider_maps.get('SC_MFP') != "0" else "0"
-                    streams = await streaming_community(streams, id, client, SC_MFP, MFP_CREDENTIALS)
-                
-                # CB01
-                if provider_maps.get('CB01') == "1" and CB == "1":
-                    streams = await cb01(streams, id, MFP, MFP_CREDENTIALS, client)
-                
-                # Altri siti
-                if provider_maps.get('GUARDASERIE') == "1" and GS == "1":
-                    streams = await guardaserie(streams, id, client)
-                if provider_maps.get('GUARDAHD') == "1" and GHD == "1":
-                    streams = await guardahd(streams, id, client)
-                if provider_maps.get('EUROSTREAMING') == "1" and ES == "1":
-                    streams = await eurostreaming(streams, id, client, MFP, MFP_CREDENTIALS)
-                if provider_maps.get('GUARDAFLIX') == "1" and GF == "1":
-                    streams = await guardaflix(streams, id, client, MFP, MFP_CREDENTIALS)
-                if provider_maps.get('GUARDOSERIE') == "1" and GO == "1":
-                    streams = await guardoserie(streams, id, client, MFP, MFP_CREDENTIALS)
-                if provider_maps.get('TOONITALIA') == "1" and TI == "1":
-                    streams = await toonitalia(streams, id, client, MFP, MFP_CREDENTIALS)
-            
-            return respond_with(streams)
-
-    if not streams['streams']:
-        raise HTTPException(status_code=404)
-    return respond_with(streams)
-        elif "realtime" in id and RT == '1':
-            streams = await streams_realtime(streams,id,client)
-            return respond_with(streams)
-        elif "tt" in id or "tmdb" in id or "kitsu" in id:
-            logger.info(f"Handling movie or series: {id}")
-            if "kitsu" in id:
-                if provider_maps['ANIMEWORLD'] == "1" and AW == "1":
-                    streams = await animeworld(streams,id,client)
-            else:
-                if provider_maps['STREAMINGCOMMUNITY'] == "1" and SC == "1":
-                    if provider_maps['SC_MFP'] != "0":
-                        SC_MFP = "1"
-                    else:
-                        SC_MFP = '0'
-                    streams = await streaming_community(streams,id,client,SC_MFP,MFP_CREDENTIALS)
-                if provider_maps['CB01'] == "1" and CB == "1":
-                    streams = await cb01(streams,id,MFP,MFP_CREDENTIALS,client)
-                if provider_maps['GUARDASERIE'] == "1" and GS == "1":
-                    streams = await guardaserie(streams,id,client)
-                if provider_maps['GUARDAHD'] == "1" and GHD == "1":
-                    streams = await guardahd(streams,id,client)
-                if provider_maps['EUROSTREAMING'] == "1" and ES == "1":
-                    streams = await eurostreaming(streams,id,client,MFP,MFP_CREDENTIALS)
-                if provider_maps['GUARDAFLIX'] == "1" and GF == "1":
-                    streams = await guardaflix(streams,id,client,MFP,MFP_CREDENTIALS)
-                if provider_maps['GUARDOSERIE'] == "1" and GO == "1":
-                    streams = await guardoserie(streams,id,client,MFP,MFP_CREDENTIALS)
-                if provider_maps['REALTIME'] == '1' and RT == '1':
-                    streams = await streams_realtime(streams,id,client)
-                if provider_maps['TOONITALIA'] == '1' and TI == '1':
-                    streams = await toonitalia(streams,id,client,MFP,MFP_CREDENTIALS)
-            return respond_with(streams)
-        if not streams['streams']:
-            raise HTTPException(status_code=404)
-
+                    streams = await streaming_community(streams, id, client, "1" if provider_maps.get('SC_MFP') != "0" else "0", MFP_CREDENTIALS)
+                if provider_maps.get('CB01') == "1" and CB == "1": streams = await cb01(streams, id, MFP, MFP_CREDENTIALS, client)
+                if provider_maps.get('GUARDASERIE') == "1" and GS == "1": streams = await guardaserie(streams, id, client)
+                if provider_maps.get('GUARDAHD') == "1" and GHD == "1": streams = await guardahd(streams, id, client)
+                if provider_maps.get('EUROSTREAMING') == "1" and ES == "1": streams = await eurostreaming(streams, id, client, MFP, MFP_CREDENTIALS)
+                if provider_maps.get('GUARDAFLIX') == "1" and GF == "1": streams = await guardaflix(streams, id, client, MFP, MFP_CREDENTIALS)
+                if provider_maps.get('GUARDOSERIE') == "1" and GO == "1": streams = await guardoserie(streams, id, client, MFP, MFP_CREDENTIALS)
+                if provider_maps.get('TOONITALIA') == "1" and TI == "1": streams = await toonitalia(streams, id, client, MFP, MFP_CREDENTIALS)
+    
+    if not streams['streams']: raise HTTPException(status_code=404)
     return respond_with(streams)
 
 @app.get('/uprot')
-async def uprot(request: Request):
-    async with AsyncSession(proxies = proxies) as client:
+async def uprot_get(request: Request):
+    async with AsyncSession(proxies=proxies) as client:
         image, cookies = await get_uprot_numbers(client)
-    response = static.TemplateResponse('uprot.html',{'request':request,"image_url": image})
-    if cookies:
-        response.set_cookie(key='PHPSESSID', value=cookies.get('PHPSESSID'),httponly=True)
+    resp = static.TemplateResponse('uprot.html', {'request': request, "image_url": image})
+    if cookies: resp.set_cookie(key='PHPSESSID', value=cookies.get('PHPSESSID'), httponly=True)
+    return resp
 
-    return response
 @app.post("/uprot")
-async def execute_uprot(request: Request,user_input = Form(...),PHPSESSID: str = Cookie(None)):
-    async with AsyncSession(proxies = proxies) as client:
-        cookies = {
-            'PHPSESSID': PHPSESSID
-        }
-        status = await generate_uprot_txt(user_input,cookies,client)
-    if status == True:
-        return static.TemplateResponse('uprot.html',{'request':request,"image_url": 'https://tinyurl.com/doneokdone'})
-    elif status == False:
-        return static.TemplateResponse('uprot.html',{'request':request,"image_url": 'https://tinyurl.com/tryagaindumb'})
+async def uprot_post(request: Request, user_input=Form(...), PHPSESSID: str = Cookie(None)):
+    async with AsyncSession(proxies=proxies) as client:
+        status = await generate_uprot_txt(user_input, {'PHPSESSID': PHPSESSID}, client)
+    img = 'https://tinyurl.com/doneokdone' if status else 'https://tinyurl.com/tryagaindumb'
+    return static.TemplateResponse('uprot.html', {'request': request, "image_url": img})
 
 @app.get('/update')
-async def update(request: Request):
-    async with AsyncSession(proxies = proxies) as client:
-        result = await update_all_sites(client)
-        if result:
-            return JSONResponse(content={"message": "200"})
-        if not result:
-            return JSONResponse(content={"message": "Failed"})
-
+async def update_sites():
+    async with AsyncSession(proxies=proxies) as client:
+        return JSONResponse(content={"message": "200" if await update_all_sites(client) else "Failed"})
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run("run:app", host=HOST, port=PORT, log_level=level)    
+    uvicorn.run("run:app", host=HOST, port=PORT, log_level=level)
