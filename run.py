@@ -10,6 +10,7 @@ from static.static import HTML
 from static.configure import CONFIGURE
 from Src.API.streamingcommunity import streaming_community
 from Src.API.cb01 import cb01
+from Src.API.guardaserie import guardaserie
 import Src.Utilities.config as config
 from Src.Utilities.loadenv import load_env
 
@@ -26,7 +27,7 @@ app.add_middleware(
 
 MANIFEST = {
     "id": "org.stremio.mammamia.cappe77",
-    "version": "2.6.0",
+    "version": "2.7.0",
     "name": "MammaMia Finale",
     "description": "Server Personale di Cappe77",
     "logo": "https://creazilla-store.fra1.digitaloceanspaces.com/emojis/49647/pizza-emoji-clipart-md.png",
@@ -55,35 +56,47 @@ def root():
 
 @app.get('/{config_str}/stream/{type}/{id}.json')
 async def addon_stream(config_str: str, type: str, id: str):
-    # Controllo chiave TMDB nei log
     tmdb = os.environ.get('TMDB_KEY')
-    if not tmdb:
-        print("⚠️ ERRORE: Chiave TMDB_KEY non trovata nei Secrets!")
-    else:
-        print(f"✅ TMDB_KEY caricata correttamente: {tmdb[:5]}***")
-
+    
+    # Link informativo
     streams = {'streams': [{
-        'title': f'✅ SERVER ATTIVO\nTMDB: {"OK" if tmdb else "MANCANTE"}',
+        'title': f'✅ SERVER ATTIVO\nTMDB: OK | Ricerca flussi...',
         'url': 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
     }]}
     
-    async with AsyncSession() as client:
+    # User-Agent per ingannare i siti (far sembrare il server un browser umano)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
+    async with AsyncSession(headers=headers, timeout=20) as client:
         if "tt" in id:
-            print(f"🔍 Ricerca film ID: {id}...")
+            # 1. Prova StreamingCommunity (Fonte più veloce)
             try:
-                # Prova StreamingCommunity
+                # Forza ricerca senza proxy per Hugging Face
                 streams = await streaming_community(streams, id, client, "0", ['', ''])
-                print(f"📊 Risultati correnti: {len(streams['streams'])} link")
             except Exception as e:
-                print(f"❌ Errore ricerca SC: {e}")
-            
+                print(f"Errore SC: {e}")
+
+            # 2. Prova CB01 (Se SC fallisce)
             try:
-                # Prova CB01
                 streams = await cb01(streams, id, "0", ['', ''], client)
-                print(f"📊 Risultati totali: {len(streams['streams'])} link")
             except Exception as e:
-                print(f"❌ Errore ricerca CB: {e}")
+                print(f"Errore CB: {e}")
+                
+            # 3. Prova Guardaserie
+            try:
+                streams = await guardaserie(streams, id, client)
+            except Exception as e:
+                print(f"Errore GS: {e}")
     
+    # Se dopo la ricerca abbiamo solo il link di test, aggiungiamo un avviso
+    if len(streams['streams']) == 1:
+        streams['streams'].append({
+            'title': '⚠️ Nessun link trovato.\nProva un altro film o attendi.',
+            'url': ''
+        })
+            
     return respond_with(streams)
 
 if __name__ == '__main__':
