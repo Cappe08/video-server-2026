@@ -62,11 +62,11 @@ Icon, Name = config.Icon, config.Name
 
 MANIFEST = {
     "id": "org.stremio.mammamia.personale",
-    "version": "2.1.2",
+    "version": "2.1.3",
     "name": Name,
     "description": "Addon MammaMia Personale - Streaming IT",
     "logo": "https://creazilla-store.fra1.digitaloceanspaces.com/emojis/49647/pizza-emoji-clipart-md.png",
-    "resources": ["stream", "catalog"], # Tolto "meta" per evitare il 404
+    "resources": ["stream", "catalog"],
     "types": ["movie", "series", "tv"],
     "id_prefixes": ["tt", "tmdb", "kitsu", "tv"],
     "catalogs": [
@@ -79,10 +79,12 @@ MANIFEST = {
 def respond_with(data):
     resp = JSONResponse(data)
     resp.headers['Access-Control-Allow-Origin'] = '*'
+    resp.headers['Access-Control-Allow-Headers'] = '*'
     return resp
 
 @app.get('/configure', response_class=HTMLResponse)
-def config_page(request: Request):
+@app.get('/{config:path}/configure', response_class=HTMLResponse)
+def config_page(request: Request, config: str = None):
     instance_url = f"{request.url.scheme}://{request.url.netloc}"
     return CONFIGURE.replace("{instance_url}", instance_url)
 
@@ -100,7 +102,7 @@ def root(request: Request):
     return HTML.replace("{instance_url}", instance_url)
 
 @app.get('/{config:path}/catalog/{type}/{id}.json')
-async def first_catalog(type: str, id: str, genre: str = None):
+async def first_catalog(config: str, type: str, id: str, genre: str = None):
     if type != "tv": return respond_with({"metas": []})
     metas = []
     for ch in STREAM["channels"]:
@@ -109,14 +111,14 @@ async def first_catalog(type: str, id: str, genre: str = None):
     return respond_with({"metas": metas})
 
 @app.get('/{config:path}/stream/{type}/{id}.json')
-async def addon_stream(config_str: str, type: str, id: str):
+async def addon_stream(config: str, type: str, id: str):
     streams = {'streams': []}
     try:
-        decoded = base64.b64decode(config_str.replace("%3D", "=")).decode('utf-8')
+        decoded = base64.b64decode(config.replace("%3D", "=")).decode('utf-8')
     except:
         decoded = "|SC|CB|GS|GHD|ES|GF|GO|RT|TI|"
 
-    provider_maps = {name: ("1" if name in decoded or "ALL" in decoded else "0") for name in provider_map.values()}
+    provider_maps = {name: ("1" if name in decoded or "SC" in decoded else "0") for name in provider_map.values()}
     
     async with AsyncSession(proxies=proxies) as client:
         if type == "tv":
@@ -124,12 +126,15 @@ async def addon_stream(config_str: str, type: str, id: str):
                 if ch["id"] == id and 'url' in ch:
                     streams['streams'].append({'title': f"{Icon} Link TV", 'url': ch['url']})
         elif "tt" in id or "tmdb" in id:
-            if provider_maps.get('STREAMINGCOMMUNITY') == "1":
+            logger.info(f"Ricerca in corso per ID: {id}")
+            # Eseguiamo StreamingCommunity come fonte principale
+            if SC == "1":
                 streams = await streaming_community(streams, id, client, "0", ['', ''])
-            if provider_maps.get('CB01') == "1":
+            # Aggiungiamo CB01 se attivo
+            if CB == "1":
                 streams = await cb01(streams, id, "0", ['', ''], client)
     
-    return respond_with(streams) # Mai più 404, restituisce lista vuota se non trova nulla
+    return respond_with(streams)
 
 if __name__ == '__main__':
     import uvicorn
