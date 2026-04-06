@@ -1,40 +1,24 @@
 {
     "Siti": {
         "StreamingCommunity": {
-            "url": "https://streaming-community.trade",
+            "url": "https://streamingcommunity.vix",
             "SC_ForwardProxy": "0", "SC_PROXY": "0", "VX_ForwardProxy": "0", "VX_PROXY": "0", "enabled": "1"
         },
         "CB01": {
-            "url": "https://cb01.uno",
-            "CB_PROXY": "0", "CB_ForwardProxy": "0", "MX_ForwardProxy": "0", "MX_PROXY": "0", "enabled": "0" 
+            "url": "https://cb01.me",
+            "CB_PROXY": "0", "CB_ForwardProxy": "0", "MX_ForwardProxy": "0", "MX_PROXY": "0", "enabled": "1" 
         },
         "Guardaserie": {
             "url": "https://guardaserie.la",
             "enabled": "1", "GS_ForwardProxy": "0", "GS_PROXY": "0"
         },
-        "GuardaHD": {
-            "url": "https://mostraguarda.stream",
-            "enabled": "0", "GH_ForwardProxy": "0", "GH_PROXY": "0"
-        },
-        "Eurostreaming": {
-            "url": "https://eurostreaming.link",
-            "enabled": "0", "ES_ForwardProxy": "0", "ES_PROXY": "0"
-        },
-        "Guardaflix": { 
-            "url": "https://guardaplay.blog", "enabled": "0", "GF_ForwardProxy": "0", "GF_PROXY": "0" 
-        },
-        "Guardoserie": { 
-            "url": "https://guardoserie.blog", "enabled": "0", "GO_ForwardProxy": "0", "GO_PROXY": "0" 
-        },
-        "AnimeWorld": { 
-            "url": "https://www.animeworld.so", "enabled": "0", "AW_ForwardProxy": "0", "AW_PROXY": "0" 
-        },
-        "Realtime": { 
-            "url": "https://realtime.it", "enabled": "0", "RT_ForwardProxy": "0", "RT_PROXY": "0" 
-        },
-        "Toonitalia": { 
-            "url": "https://toonitalia.xyz", "enabled": "0", "TI_ForwardProxy": "0", "TI_PROXY": "0" 
-        }
+        "GuardaHD": { "url": "https://mostraguarda.stream", "enabled": "0" },
+        "Eurostreaming": { "url": "https://eurostreaming.link", "enabled": "0" },
+        "Guardaflix": { "url": "https://guardaplay.blog", "enabled": "0" },
+        "Guardoserie": { "url": "https://guardoserie.blog", "enabled": "0" },
+        "AnimeWorld": { "url": "https://www.animeworld.so", "enabled": "0" },
+        "Realtime": { "url": "https://realtime.it", "enabled": "0" },
+        "Toonitalia": { "url": "https://toonitalia.xyz", "enabled": "0" }
     },
     "Captcha": { "Uprot": { "UT_ForwardProxy": "0", "UT_PROXY": "0" } },
     "Catalogues": { "enabled": "1" },
