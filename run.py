@@ -1,5 +1,14 @@
 from fastapi import FastAPI, HTTPException,Request, Form,Cookie
 from fastapi.responses import JSONResponse,RedirectResponse,HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.middleware import SlowAPIMiddleware
