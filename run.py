@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 import base64
+import os
 import random
 from curl_cffi.requests import AsyncSession
 
@@ -22,24 +23,18 @@ app.add_middleware(
 
 MANIFEST = {
     "id": "org.stremio.mammamia.cappe77",
-    "version": "3.1.0",
+    "version": "4.0.0",
     "name": "MammaMia Finale",
-    "description": "Server Personale di Cappe77",
+    "description": "Server Render di Cappe77",
     "logo": "https://creazilla-store.fra1.digitaloceanspaces.com/emojis/49647/pizza-emoji-clipart-md.png",
     "resources": ["stream"],
     "types": ["movie", "series"],
     "id_prefixes": ["tt"]
 }
 
-# Lista di identità per ingannare i blocchi
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
-]
-
 @app.get('/configure', response_class=HTMLResponse)
-def config_page(request: Request):
+@app.get('/{config_str}/configure', response_class=HTMLResponse)
+def config_page(request: Request, config_str: str = None):
     return CONFIGURE.replace("{instance_url}", f"{request.url.scheme}://{request.url.netloc}")
 
 @app.get('/manifest.json')
@@ -55,24 +50,26 @@ def root():
 async def addon_stream(config_str: str, type: str, id: str):
     streams = {'streams': []}
     
-    # Messaggio di debug che vedrai su Stremio
-    debug_msg = "🔍 Ricerca avviata..."
+    # Check TMDB Key
+    tmdb_key = os.environ.get('TMDB_KEY')
+    tmdb_status = "OK" if tmdb_key else "MANCANTE (Controlla Environment su Render!)"
     
-    async with AsyncSession(
-        headers={"User-Agent": random.choice(USER_AGENTS)},
-        timeout=25,
-        impersonate="chrome110" # Simula perfettamente Chrome
-    ) as client:
+    async with AsyncSession(impersonate="chrome110", timeout=25) as client:
         if "tt" in id:
             try:
-                # Prova StreamingCommunity
+                # Tentativo di ricerca
                 streams = await streaming_community(streams, id, client, "0", ['', ''])
             except Exception as e:
-                debug_msg = f"❌ Errore: {str(e)[:20]}"
+                # Scrive l'errore nel titolo del link su Stremio
+                error_msg = str(e)[:30]
+                streams['streams'].append({
+                    'title': f'❌ Errore ricerca: {error_msg}\nSito bloccato o down.',
+                    'url': 'https://vjs.zencdn.net/v/oceans.mp4'
+                })
 
-    if not streams['streams']:
+    if not streams['streams'] or (len(streams['streams']) == 1 and "Errore" not in streams['streams'][0]['title']):
         streams['streams'].append({
-            'title': f'⚠️ Nessun link trovato\n{debug_msg}',
+            'title': f'⚠️ Nessun link trovato.\nChiave TMDB: {tmdb_status}',
             'url': 'https://vjs.zencdn.net/v/oceans.mp4'
         })
             
@@ -80,5 +77,6 @@ async def addon_stream(config_str: str, type: str, id: str):
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run("run:app", host="0.0.0.0", port=8080)
-    
+    # Render assegna la porta automaticamente tramite la variabile PORT
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run("run:app", host="0.0.0.0", port=port)
